@@ -43,16 +43,36 @@ im_height = FLAGS.eval_image_size
 im_width = FLAGS.eval_image_size
 im_channels = 3
 
-# Get the preprocessing function for the network
-preprocess_fn = preprocessing_factory.get_preprocessing(
-                             FLAGS.model_name,
-                             is_training=False)
+g = tf.Graph()
+#Override the default graph
+with g.as_default():
+    # Get the preprocessing function for the network
+    preprocess_fn = preprocessing_factory.get_preprocessing(
+                                FLAGS.model_name,
+                                is_training=False)
 
-# Create a producer from the imagenet dataset
-image_producer = dataset.ImageNetProducer(FLAGS.val_ground_truth_labels,
-                                          FLAGS.dataset_dir,
-                                          FLAGS.batch_size,
-                                          preprocess_fn,
-                                          im_height, im_width, im_channels)
+    # Create a producer from the imagenet dataset
+    image_producer = dataset.ImageNetProducer(FLAGS.val_ground_truth_labels,
+                                              FLAGS.dataset_dir,
+                                              FLAGS.batch_size,
+                                              preprocess_fn,
+                                              im_height, im_width, im_channels)
 
-# Load variabels for the model from a check point
+    # Get the function for constructing the network
+    network_fn = nets_factory.get_network_fn(FLAGS.model_name,
+                                             num_classes=1000,
+                                             is_training=False)
+
+    with tf.Session() as sess:
+        coordinator = tf.train.Coordinator()
+        # Start the image processing workers
+        threads = image_producer.start(session=sess, coordinator=coordinator)
+        labels, images = image_producer.get(sess)
+        # Define the model
+        logits, _ = network_fn(images)
+        slim.model_analyzer.analyze_ops(g, print_info = True)
+        # Load variabels for the model from a checkpoint
+
+        # Stop the worker threads
+        coordinator.request_stop()
+        coordinator.join(threads, stop_grace_period_secs=2)
